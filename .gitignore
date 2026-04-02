@@ -35,6 +35,9 @@ MANIFEST
 # Custom
 assigment.pdf
 generator-doc.md
+output
+data/raw
+data/processed
 
 # Installer logs
 pip-log.txt
