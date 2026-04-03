@@ -250,3 +250,23 @@ def sessions_by_practice(conn: sqlite3.Connection) -> pd.DataFrame:
         .sort_values("session_count", ascending=False)
     )
     return result
+
+if __name__ == '__main__':
+    conn = get_db()
+
+    def show(title, df):
+        print(f"\n=== {title} ===")
+        if df is None or df.empty:
+            print("(no data)")
+        else:
+            print(df.to_string(index=False))
+
+    show("Cost by practice", cost_by_practice(conn))
+    show("Events by hour", events_by_hour(conn))
+    show("Tool usage", tool_usage(conn))
+    show("Cost by model", cost_by_model(conn))
+    show("Top users by cost", top_users_by_cost(conn))
+    show("Daily cost", daily_cost(conn))
+    show("Sessions by practice", sessions_by_practice(conn))
+    
+    
