@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Ingest telemetry_logs.jsonl and employees.csv into a SQLite database.
 
