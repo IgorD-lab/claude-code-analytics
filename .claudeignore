@@ -2,3 +2,4 @@ data/raw/
 data/processed/
 *.csv
 *.json
+data/generate_fake_data.py
