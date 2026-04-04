@@ -285,6 +285,81 @@ def ingest_employees(conn: sqlite3.Connection) -> dict:
     }
 
 
+# ── Post-load integrity checks ────────────────────────────────────────────────
+# Runs after every load so data quality issues surface immediately rather than
+# silently corrupting dashboard metrics or API responses.
+
+def run_integrity_checks(conn: sqlite3.Connection) -> dict:
+    """Run join and value sanity checks; return a results dict."""
+
+    null_email = conn.execute(
+        "SELECT COUNT(*) FROM events WHERE user_email IS NULL OR user_email = ''"
+    ).fetchone()[0]
+
+    unmatched_event_emails = conn.execute("""
+        SELECT COUNT(DISTINCT e.user_email)
+        FROM events e
+        LEFT JOIN employees emp ON e.user_email = emp.email
+        WHERE emp.email IS NULL
+          AND e.user_email IS NOT NULL AND e.user_email != ''
+    """).fetchone()[0]
+
+    unmatched_employee_emails = conn.execute("""
+        SELECT COUNT(DISTINCT emp.email)
+        FROM employees emp
+        LEFT JOIN events e ON emp.email = e.user_email
+        WHERE e.user_email IS NULL
+    """).fetchone()[0]
+
+    negative_checks = {
+        "cost_usd (api_request)":     conn.execute(
+            "SELECT COUNT(*) FROM events WHERE body='claude_code.api_request' AND cost_usd < 0"
+        ).fetchone()[0],
+        "duration_ms (api_request)":  conn.execute(
+            "SELECT COUNT(*) FROM events WHERE body='claude_code.api_request' AND duration_ms < 0"
+        ).fetchone()[0],
+        "input_tokens (api_request)": conn.execute(
+            "SELECT COUNT(*) FROM events WHERE body='claude_code.api_request' AND input_tokens < 0"
+        ).fetchone()[0],
+        "output_tokens (api_request)": conn.execute(
+            "SELECT COUNT(*) FROM events WHERE body='claude_code.api_request' AND output_tokens < 0"
+        ).fetchone()[0],
+    }
+
+    return {
+        "null_email": null_email,
+        "unmatched_event_emails": unmatched_event_emails,
+        "unmatched_employee_emails": unmatched_employee_emails,
+        "negative_checks": negative_checks,
+    }
+
+
+# ── Index creation ────────────────────────────────────────────────────────────
+# The dashboard and API hit three query patterns constantly: filtering by event
+# type + time (cost charts), joining on user_email (user-level aggregations),
+# and grouping sessions by time (session duration). Without indexes SQLite
+# does a full table scan on 450k rows for each. These three cover all three.
+
+INDEXES = [
+    ("idx_events_body_ts",   "CREATE INDEX IF NOT EXISTS idx_events_body_ts ON events (body, event_timestamp)"),
+    ("idx_events_user_email","CREATE INDEX IF NOT EXISTS idx_events_user_email ON events (user_email)"),
+    ("idx_events_session",   "CREATE INDEX IF NOT EXISTS idx_events_session ON events (session_id, event_timestamp_ms)"),
+]
+
+def create_indexes(conn: sqlite3.Connection) -> list[str]:
+    """Create indexes if they don't exist; return list of names created."""
+    existing = {
+        row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
+    }
+    created = []
+    for name, ddl in INDEXES:
+        conn.execute(ddl)
+        if name not in existing:
+            created.append(name)
+    conn.commit()
+    return created
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -309,22 +384,46 @@ def main() -> None:
     print("Ingesting employees from CSV …")
     em = ingest_employees(conn)
 
+    print("Running integrity checks …")
+    ic = run_integrity_checks(conn)
+
+    print("Creating indexes …")
+    created_indexes = create_indexes(conn)
+
     conn.close()
 
-    w = 42
+    w = 48
     print(f"\n{'═'*w}")
     print("  INGESTION SUMMARY")
     print(f"{'─'*w}")
-    print(f"  {'JSONL envelopes read':<28} {ev['envelopes_read']:>8,}")
-    print(f"  {'Events attempted':<28} {ev['rows_attempted']:>8,}")
-    print(f"  {'Events inserted':<28} {ev['rows_inserted']:>8,}")
-    print(f"  {'Events skipped (duplicates)':<28} {ev['rows_attempted'] - ev['rows_inserted']:>8,}")
-    print(f"  {'Event parse errors':<28} {ev['parse_errors']:>8,}")
+    print(f"  {'JSONL envelopes read':<32} {ev['envelopes_read']:>8,}")
+    print(f"  {'Events attempted':<32} {ev['rows_attempted']:>8,}")
+    print(f"  {'Events inserted':<32} {ev['rows_inserted']:>8,}")
+    print(f"  {'Events skipped (duplicates)':<32} {ev['rows_attempted'] - ev['rows_inserted']:>8,}")
+    print(f"  {'Event parse errors':<32} {ev['parse_errors']:>8,}")
     print(f"{'─'*w}")
-    print(f"  {'Employees attempted':<28} {em['rows_attempted']:>8,}")
-    print(f"  {'Employees inserted':<28} {em['rows_inserted']:>8,}")
-    print(f"  {'Employees skipped (duplicates)':<28} {em['rows_attempted'] - em['rows_inserted']:>8,}")
-    print(f"  {'Employee parse errors':<28} {em['parse_errors']:>8,}")
+    print(f"  {'Employees attempted':<32} {em['rows_attempted']:>8,}")
+    print(f"  {'Employees inserted':<32} {em['rows_inserted']:>8,}")
+    print(f"  {'Employees skipped (duplicates)':<32} {em['rows_attempted'] - em['rows_inserted']:>8,}")
+    print(f"  {'Employee parse errors':<32} {em['parse_errors']:>8,}")
+    print(f"{'─'*w}")
+    print("  INTEGRITY CHECKS")
+    print(f"{'─'*w}")
+    null_status    = "FAIL" if ic["null_email"] else "OK"
+    unmatch_ev_st  = "FAIL" if ic["unmatched_event_emails"] else "OK"
+    unmatch_emp_st = "WARN" if ic["unmatched_employee_emails"] else "OK"
+    print(f"  {'Null/empty user_email':<32} {ic['null_email']:>6,}  [{null_status}]")
+    print(f"  {'Event emails not in employees':<32} {ic['unmatched_event_emails']:>6,}  [{unmatch_ev_st}]")
+    print(f"  {'Employee emails not in events':<32} {ic['unmatched_employee_emails']:>6,}  [{unmatch_emp_st}]")
+    for field, count in ic["negative_checks"].items():
+        status = "FAIL" if count else "OK"
+        print(f"  {'Negative ' + field:<32} {count:>6,}  [{status}]")
+    print(f"{'─'*w}")
+    print("  INDEXES")
+    print(f"{'─'*w}")
+    for name, _ in INDEXES:
+        tag = "created" if name in created_indexes else "already existed"
+        print(f"  {name:<36}  {tag}")
     print(f"{'─'*w}")
     print(f"  Database: {DB_PATH}")
     print(f"{'═'*w}\n")
