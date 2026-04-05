@@ -170,9 +170,13 @@ def daily_cost(conn: sqlite3.Connection) -> pd.DataFrame:
     Total API cost per calendar day (UTC), returned as a continuous time series
     with zero-filled gaps for days with no activity.
     """
+    # NOTE: alias must not be "day" — the events table has an integer column named "day"
+    # (day-of-month from the envelope). GROUP BY day would silently group by that column
+    # instead of the alias, collapsing Dec 8 + Jan 8 into one bucket, etc.
+    # GROUP BY 1 (positional) or a distinct alias like "event_date" avoids the collision.
     sql = """
         SELECT
-            DATE(event_timestamp) AS date,
+            DATE(event_timestamp) AS event_date,
             ROUND(SUM(cost_usd), 4)    AS total_cost_usd,
             COUNT(*)                   AS api_requests
         FROM events
@@ -181,7 +185,8 @@ def daily_cost(conn: sqlite3.Connection) -> pd.DataFrame:
         GROUP BY 1
         ORDER BY 1
     """
-    df = pd.read_sql(sql, conn, parse_dates=["date"])
+    df = pd.read_sql(sql, conn, parse_dates=["event_date"])
+    df = df.rename(columns={"event_date": "date"})
 
     # Fill in any missing dates in the range with zeros
     full_range = pd.date_range(df["date"].min(), df["date"].max(), freq="D")

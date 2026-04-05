@@ -47,7 +47,7 @@ def parse_event_timestamp(value: str | None) -> str | None:
         return None
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return dt.astimezone(timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc).isoformat(timespec="microseconds")
     except (ValueError, TypeError):
         return None
 
