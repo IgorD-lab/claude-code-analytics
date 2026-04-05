@@ -41,11 +41,12 @@ def new_conn():
 # ── Raw filtered data (cached per filter state) ───────────────────────────────
 
 @st.cache_data(ttl=300)
-def load_base(date_min, date_max, practices, levels):
+def load_base(date_min, date_max, practices, levels, locations):
     """Return the filtered events + employees joined DataFrame."""
     params = [date_min, date_max]
     practice_clause = ""
     level_clause = ""
+    location_clause = ""
     if practices:
         placeholders = ",".join("?" * len(practices))
         practice_clause = f"AND COALESCE(emp.practice, e.resource_user_practice) IN ({placeholders})"
@@ -54,6 +55,10 @@ def load_base(date_min, date_max, practices, levels):
         placeholders = ",".join("?" * len(levels))
         level_clause = f"AND emp.level IN ({placeholders})"
         params += list(levels)
+    if locations:
+        placeholders = ",".join("?" * len(locations))
+        location_clause = f"AND emp.location IN ({placeholders})"
+        params += list(locations)
 
     sql = f"""
         SELECT
@@ -67,6 +72,7 @@ def load_base(date_min, date_max, practices, levels):
         WHERE DATE(e.event_timestamp) BETWEEN ? AND ?
           {practice_clause}
           {level_clause}
+          {location_clause}
     """
     with new_conn() as c:
         return pd.read_sql(sql, c, params=params,
@@ -88,6 +94,9 @@ with st.sidebar:
         all_levels = [r[0] for r in _c.execute(
             "SELECT DISTINCT level FROM employees ORDER BY level"
         )]
+        all_locations = [r[0] for r in _c.execute(
+            "SELECT DISTINCT location FROM employees ORDER BY location"
+        )]
 
     d_min = pd.to_datetime(date_bounds[0]).date()
     d_max = pd.to_datetime(date_bounds[1]).date()
@@ -105,8 +114,9 @@ with st.sidebar:
 
     sel_practices = st.multiselect("Practice", all_practices, default=[])
     sel_levels = st.multiselect("Engineer level", all_levels, default=[])
+    sel_locations = st.multiselect("Location", all_locations, default=[])
 
-df = load_base(sel_min, sel_max, tuple(sel_practices), tuple(sel_levels))
+df = load_base(sel_min, sel_max, tuple(sel_practices), tuple(sel_levels), tuple(sel_locations))
 
 api   = df[df["body"] == "claude_code.api_request"]
 tools = df[df["body"] == "claude_code.tool_decision"]
