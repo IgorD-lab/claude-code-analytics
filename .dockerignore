@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Git
+.git/
+.gitignore
+
+# Generated data — regenerated during docker build
+data/raw/
+data/processed/
+
+# Secrets and local config
+.env
+.envrc
+
+# Editor
+.vscode/
+.idea/

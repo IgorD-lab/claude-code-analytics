@@ -38,6 +38,7 @@ generator-doc.md
 output
 data/raw
 data/processed
+docs/llm_usage_log.md
 
 # Installer logs
 pip-log.txt

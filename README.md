@@ -4,12 +4,28 @@ Analyse Claude Code telemetry across an engineering organisation. Ingests raw Op
 
 ## Quick Start
 
+### Docker (recommended)
+
+```bash
+docker compose up --build
+```
+
+Data generation and database ingestion run automatically during `--build`. On subsequent starts, omit `--build`.
+
+| Service   | URL                                                      |
+| --------- | -------------------------------------------------------- |
+| Dashboard | http://localhost:8501                                    |
+| API       | http://localhost:8000                                    |
+| API docs  | http://localhost:8000/docs · http://localhost:8000/redoc |
+
+### Manual setup
+
 **1. Clone and install**
 
 ```bash
 git clone https://github.com/IgorD-lab/claude-code-analytics.git && cd claude-code-analytics
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt        # fastapi, uvicorn, pandas, plotly, pydantic, streamlit
+pip install -r requirements.txt
 ```
 
 **2. Generate sample data**
@@ -18,7 +34,7 @@ pip install -r requirements.txt        # fastapi, uvicorn, pandas, plotly, pydan
 python3 data/generate_fake_data.py --num-users 100 --num-sessions 5000 --days 60 --output-dir data/raw
 ```
 
-**3. Ingest data into SQLite database.**
+**3. Ingest into SQLite**
 
 ```bash
 python src/data_ingestion.py
@@ -34,7 +50,6 @@ streamlit run src/dashboard.py
 
 ```bash
 uvicorn src.api:app --reload
-# Raw        → http://localhost:8000
 # Swagger UI → http://localhost:8000/docs
 # ReDoc      → http://localhost:8000/redoc
 ```
