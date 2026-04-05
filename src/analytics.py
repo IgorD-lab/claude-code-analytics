@@ -377,7 +377,133 @@ def cost_per_token(
     return pd.read_sql(sql, conn, params=params or None)
 
 
-# ── 10. Available filter values ────────────────────────────────────────────────
+# ── 11. Events by day of week ─────────────────────────────────────────────────
+
+def events_by_day_of_week(
+    conn: sqlite3.Connection, filters: Filters | None = None
+) -> pd.DataFrame:
+    """
+    Total event count for each day of the week (Mon–Sun), across all event types.
+    Always returns exactly 7 rows in Mon-first order; days with no events are zero-filled.
+
+    SQLite strftime('%w') returns 0=Sun, 1=Mon, …, 6=Sat.
+    The sort key (i-1)%7 rotates that so Mon sorts first (0) and Sun sorts last (6).
+    """
+    extra, params = _where(filters)
+    sql = f"""
+        SELECT
+            CAST(strftime('%w', event_timestamp) AS INTEGER) AS dow_index,
+            COUNT(*) AS event_count
+        FROM events
+        WHERE event_timestamp IS NOT NULL
+          {extra}
+        GROUP BY 1
+    """
+    df = pd.read_sql(sql, conn, params=params or None)
+    dow_names = {0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat"}
+    df = (
+        pd.DataFrame({"dow_index": range(7)})
+        .merge(df, on="dow_index", how="left")
+        .fillna({"event_count": 0})
+        .astype({"event_count": int})
+        .assign(
+            day_of_week=lambda d: d["dow_index"].map(dow_names),
+            _sort=lambda d: d["dow_index"].map(lambda i: (i - 1) % 7),
+        )
+        .sort_values("_sort")
+        [["day_of_week", "event_count"]]
+        .reset_index(drop=True)
+    )
+    return df
+
+
+# ── 12. API requests broken down by model and practice ────────────────────────
+
+def requests_by_model_and_practice(
+    conn: sqlite3.Connection, filters: Filters | None = None
+) -> pd.DataFrame:
+    """
+    Request count for each (practice, model) combination from api_request events.
+
+    Drives the "API Requests by Model and Practice" stacked bar chart.
+    Practice is resolved from employees first, falling back to resource_user_practice.
+    """
+    extra, params = _where(filters, alias="e")
+    sql = f"""
+        SELECT
+            COALESCE(emp.practice, e.resource_user_practice, 'Unknown') AS practice,
+            e.model,
+            COUNT(*) AS requests
+        FROM events e
+        LEFT JOIN employees emp ON e.user_email = emp.email
+        WHERE e.body = 'claude_code.api_request'
+          AND e.model IS NOT NULL
+          {extra}
+        GROUP BY 1, 2
+        ORDER BY practice, requests DESC
+    """
+    return pd.read_sql(sql, conn, params=params or None)
+
+
+# ── 13. Cache token stats by model ────────────────────────────────────────────
+
+def cache_stats_by_model(
+    conn: sqlite3.Connection, filters: Filters | None = None
+) -> pd.DataFrame:
+    """
+    Cache read and creation token counts per model, with hit ratio (%).
+
+    hit_ratio_pct = cache_read / (cache_read + cache_creation) * 100.
+    Rows where total cache tokens is zero produce NULL hit_ratio_pct via NULLIF.
+    Drives the "Cache Hit Ratio by Model" stacked bar chart.
+    """
+    extra, params = _where(filters)
+    sql = f"""
+        SELECT
+            model,
+            SUM(cache_read_tokens)     AS cache_read_tokens,
+            SUM(cache_creation_tokens) AS cache_creation_tokens,
+            SUM(cache_read_tokens) + SUM(cache_creation_tokens) AS total_cache_tokens,
+            ROUND(
+                100.0 * SUM(cache_read_tokens)
+                / NULLIF(SUM(cache_read_tokens) + SUM(cache_creation_tokens), 0),
+                1
+            ) AS hit_ratio_pct
+        FROM events
+        WHERE body = 'claude_code.api_request'
+          AND model IS NOT NULL
+          {extra}
+        GROUP BY 1
+        ORDER BY total_cache_tokens DESC
+    """
+    return pd.read_sql(sql, conn, params=params or None)
+
+
+# ── 14. Summary stats (metric cards) ──────────────────────────────────────────
+
+def summary_stats(
+    conn: sqlite3.Connection, filters: Filters | None = None
+) -> pd.DataFrame:
+    """
+    Single-row summary matching the four metric cards at the top of the dashboard:
+    total events, total API cost, unique users, and unique sessions.
+    """
+    extra, params = _where(filters)
+    sql = f"""
+        SELECT
+            COUNT(*)                                                                    AS total_events,
+            ROUND(SUM(CASE WHEN body = 'claude_code.api_request' THEN cost_usd ELSE 0 END), 4)
+                                                                                        AS total_api_cost_usd,
+            COUNT(DISTINCT user_email)                                                  AS unique_users,
+            COUNT(DISTINCT session_id)                                                  AS unique_sessions
+        FROM events
+        WHERE 1=1
+          {extra}
+    """
+    return pd.read_sql(sql, conn, params=params or None)
+
+
+# ── 15. Available filter values ────────────────────────────────────────────────
 
 def get_filters(conn: sqlite3.Connection) -> dict:
     """
@@ -425,3 +551,7 @@ if __name__ == '__main__':
     show("Sessions by practice", sessions_by_practice(conn))
     show("Model efficiency", model_efficiency(conn))
     show("Cost per token", cost_per_token(conn))
+    show("Events by day of week", events_by_day_of_week(conn))
+    show("Requests by model and practice", requests_by_model_and_practice(conn))
+    show("Cache stats by model", cache_stats_by_model(conn))
+    show("Summary stats", summary_stats(conn))

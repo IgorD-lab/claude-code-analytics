@@ -24,31 +24,39 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.analytics import (
     Filters,
+    cache_stats_by_model,
     cost_by_model,
     cost_by_practice,
     cost_per_token,
     daily_cost,
+    events_by_day_of_week,
     events_by_hour,
     get_db,
     get_filters,
     model_efficiency,
+    requests_by_model_and_practice,
     sessions_by_practice,
+    summary_stats,
     tool_usage,
     top_users_by_cost,
 )
 from src.models import (
+    CacheStatsByModelRow,
     CostByModelRow,
     CostByPracticeRow,
     CostPerTokenRow,
     DailyCostRow,
+    EventsByDayRow,
     FiltersResponse,
     Level,
     Location,
     ModelEfficiencyRow,
     Practice,
+    RequestsByModelAndPracticeRow,
     RootResponse,
     RouteInfo,
     SessionsByPracticeRow,
+    SummaryStats,
     ToolUsageRow,
     TopUserRow,
     UsageByHourRow,
@@ -143,17 +151,21 @@ def _records(df: pd.DataFrame) -> list[dict]:
 # ── Route index ────────────────────────────────────────────────────────────────
 
 _ROUTES = [
-    RouteInfo(path="/",                         description="This index — all available routes with descriptions"),
-    RouteInfo(path="/api/filters",              description="Available filter values: practices, levels, locations, date range"),
-    RouteInfo(path="/api/cost-by-practice",     description="Total API cost and token usage grouped by practice team"),
-    RouteInfo(path="/api/cost-by-model",        description="Total API cost, token usage, and cost share percentage by model"),
-    RouteInfo(path="/api/usage-by-hour",        description="Total event count by UTC hour of day (0–23, all hours always present)"),
-    RouteInfo(path="/api/tool-usage",           description="Tool decision counts and approval rates, ordered by volume"),
-    RouteInfo(path="/api/top-users",            description="Top N users by API spend with employee details (limit param, 1–100, default 10)"),
-    RouteInfo(path="/api/daily-cost",           description="Daily API cost time series with zero-filled gaps"),
-    RouteInfo(path="/api/sessions-by-practice", description="Session count and average/max duration by practice"),
-    RouteInfo(path="/api/model-efficiency",     description="Request share, cost share, and avg cost per request by model"),
-    RouteInfo(path="/api/cost-per-token",       description="Cost per 1,000 tokens (input + output) by model"),
+    RouteInfo(path="/",                                  description="This index — all available routes with descriptions"),
+    RouteInfo(path="/api/filters",                       description="Available filter values: practices, levels, locations, date range"),
+    RouteInfo(path="/api/summary",                       description="Top-level metric cards: total events, API cost, unique users, unique sessions"),
+    RouteInfo(path="/api/cost-by-practice",              description="Total API cost and token usage grouped by practice team"),
+    RouteInfo(path="/api/cost-by-model",                 description="Total API cost, token usage, and cost share percentage by model"),
+    RouteInfo(path="/api/daily-cost",                    description="Daily API cost time series with zero-filled gaps"),
+    RouteInfo(path="/api/model-efficiency",              description="Request share, cost share, and avg cost per request by model"),
+    RouteInfo(path="/api/cost-per-token",                description="Cost per 1,000 tokens (input + output) by model"),
+    RouteInfo(path="/api/usage-by-hour",                 description="Total event count by UTC hour of day (0–23, all hours always present)"),
+    RouteInfo(path="/api/usage-by-day-of-week",          description="Total event count by day of week (Mon–Sun, all 7 days always present)"),
+    RouteInfo(path="/api/tool-usage",                    description="Tool decision counts and approval rates, ordered by volume"),
+    RouteInfo(path="/api/top-users",                     description="Top N users by API spend with employee details (limit param, 1–100, default 10)"),
+    RouteInfo(path="/api/sessions-by-practice",          description="Session count and average/max duration by practice"),
+    RouteInfo(path="/api/requests-by-model-and-practice", description="API request count broken down by every (practice, model) combination"),
+    RouteInfo(path="/api/cache-stats",                   description="Cache read/creation token counts and hit ratio percentage by model"),
 ]
 
 # Shared 422 response documented on every endpoint.
@@ -165,6 +177,20 @@ _422 = {422: {"description": "Validation error — invalid query parameter value
 def root():
     """List all available API routes with one-line descriptions."""
     return RootResponse(title="Claude Code Analytics API", version="1.0.0", routes=_ROUTES)
+
+
+@app.get("/api/summary", response_model=SummaryStats, responses=_422, tags=["meta"])
+def api_summary(conn: DBConn, filters: CommonFilters):
+    """
+    Top-level metric cards matching the four numbers at the top of the dashboard.
+
+    Returns a single object (not a list) with total_events, total_api_cost_usd,
+    unique_users, and unique_sessions, all scoped to the active filters.
+    """
+    rows = _records(summary_stats(conn, filters))
+    return rows[0] if rows else SummaryStats(
+        total_events=0, total_api_cost_usd=0.0, unique_users=0, unique_sessions=0
+    )
 
 
 @app.get("/api/filters", response_model=FiltersResponse, tags=["meta"])
@@ -291,6 +317,22 @@ def api_usage_by_hour(conn: DBConn, filters: CommonFilters):
 
 
 @app.get(
+    "/api/usage-by-day-of-week",
+    response_model=list[EventsByDayRow],
+    responses=_422,
+    tags=["usage"],
+)
+def api_usage_by_day_of_week(conn: DBConn, filters: CommonFilters):
+    """
+    Total event count by day of the week across all event types.
+
+    Always returns exactly 7 rows in Mon-first order (Mon, Tue, …, Sun). Days
+    with no events in the filtered range are included with event_count 0.
+    """
+    return _records(events_by_day_of_week(conn, filters))
+
+
+@app.get(
     "/api/tool-usage",
     response_model=list[ToolUsageRow],
     responses=_422,
@@ -353,3 +395,40 @@ def api_sessions_by_practice(conn: DBConn, filters: CommonFilters):
     Rows are ordered by session_count descending.
     """
     return _records(sessions_by_practice(conn, filters))
+
+
+# ── Token / cache endpoints ────────────────────────────────────────────────────
+
+@app.get(
+    "/api/requests-by-model-and-practice",
+    response_model=list[RequestsByModelAndPracticeRow],
+    responses=_422,
+    tags=["tokens"],
+)
+def api_requests_by_model_and_practice(conn: DBConn, filters: CommonFilters):
+    """
+    API request count for every (practice, model) combination.
+
+    Drives the stacked bar chart showing how each practice distributes its usage
+    across models. Practice resolves from the employees table, falling back to
+    the resource_user_practice field. Ordered by practice then requests descending.
+    """
+    return _records(requests_by_model_and_practice(conn, filters))
+
+
+@app.get(
+    "/api/cache-stats",
+    response_model=list[CacheStatsByModelRow],
+    responses=_422,
+    tags=["tokens"],
+)
+def api_cache_stats(conn: DBConn, filters: CommonFilters):
+    """
+    Cache read and creation token counts per model, with hit ratio.
+
+    `hit_ratio_pct` = cache_read / (cache_read + cache_creation) × 100. A high
+    hit ratio means the model is reusing cached prompt prefixes effectively.
+    `hit_ratio_pct` is null when total cache tokens is zero.
+    Rows are ordered by total_cache_tokens descending.
+    """
+    return _records(cache_stats_by_model(conn, filters))

@@ -252,6 +252,79 @@ class SessionsByPracticeRow(BaseModel):
     }
 
 
+# ── Summary / metric-card endpoint ────────────────────────────────────────────
+
+class SummaryStats(BaseModel):
+    total_events: int
+    total_api_cost_usd: float | None
+    unique_users: int
+    unique_sessions: int
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "total_events": 454821,
+                    "total_api_cost_usd": 420.1834,
+                    "unique_users": 98,
+                    "unique_sessions": 4923,
+                }
+            ]
+        }
+    }
+
+
+# ── Usage endpoints (day-of-week) ──────────────────────────────────────────────
+
+class EventsByDayRow(BaseModel):
+    day_of_week: str   # "Mon" … "Sun", always Mon-first order
+    event_count: int
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{"day_of_week": "Wed", "event_count": 87431}]
+        }
+    }
+
+
+# ── Token / cache endpoints ────────────────────────────────────────────────────
+
+class RequestsByModelAndPracticeRow(BaseModel):
+    practice: str
+    model: str
+    requests: int
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"practice": "ML Engineering", "model": "claude-3-5-sonnet-20241022", "requests": 2341}
+            ]
+        }
+    }
+
+
+class CacheStatsByModelRow(BaseModel):
+    model: str
+    cache_read_tokens: int | None
+    cache_creation_tokens: int | None
+    total_cache_tokens: int | None
+    hit_ratio_pct: float | None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "model": "claude-3-5-sonnet-20241022",
+                    "cache_read_tokens": 9821034,
+                    "cache_creation_tokens": 1234098,
+                    "total_cache_tokens": 11055132,
+                    "hit_ratio_pct": 88.9,
+                }
+            ]
+        }
+    }
+
+
 # ── Meta endpoints ─────────────────────────────────────────────────────────────
 
 class FiltersResponse(BaseModel):
