@@ -173,7 +173,7 @@ with tab1:
         fig.update_layout(coloraxis_showscale=False, margin=dict(l=0),
                           xaxis=dict(tickprefix="$", tickformat=",.2f"),
                           height=bar_height)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     # Cost by model
     with col_b:
@@ -188,7 +188,7 @@ with tab1:
         fig.update_layout(coloraxis_showscale=False, margin=dict(l=0),
                           xaxis=dict(tickprefix="$", tickformat=",.2f"),
                           height=bar_height)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     # Model efficiency table (new — no existing chart covers %, avg cost/req)
     st.subheader("Model Efficiency")
@@ -220,7 +220,7 @@ with tab1:
         display_eff["avg_cost_per_req"] = display_eff["avg_cost_per_req"].map("${:.4f}".format)
         display_eff.columns = ["Model", "Requests", "% of Requests",
                                 "Total Cost", "% of Cost", "Avg Cost / Request"]
-        st.dataframe(display_eff, use_container_width=True, hide_index=True)
+        st.dataframe(display_eff, hide_index=True)
 
     # Daily cost time series (full width)
     st.subheader("Daily Cost Over Time")
@@ -253,7 +253,7 @@ with tab1:
     )
     fig.update_layout(margin=dict(t=0),
                       yaxis=dict(tickprefix="$", tickformat=",.2f"))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -286,7 +286,7 @@ with tab2:
         fig.update_traces(hovertemplate="<b>Hour %{x}</b><br>Events: %{y:,}<extra></extra>")
         fig.update_layout(coloraxis_showscale=False, margin=dict(t=0),
                           yaxis=dict(tickformat=","))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     # Events by day of week
     with col_b:
@@ -312,7 +312,7 @@ with tab2:
         fig.update_traces(hovertemplate="<b>%{x}</b><br>Events: %{y:,}<extra></extra>")
         fig.update_layout(coloraxis_showscale=False, margin=dict(t=0),
                           yaxis=dict(tickformat=","))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     # Tool approval rate (full width)
     st.subheader("Tool Approval Rate")
@@ -350,7 +350,7 @@ with tab2:
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
             margin=dict(l=0, t=40),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
     else:
         st.info("No tool decision events in selected range.")
 
@@ -374,7 +374,7 @@ with tab3:
     top_users["total_cost"] = top_users["total_cost"].map("${:,.2f}".format)
     top_users["api_requests"] = top_users["api_requests"].map("{:,}".format)
     top_users.columns = ["Email", "Name", "Practice", "Level", "API Requests", "Total Cost"]
-    st.dataframe(top_users, use_container_width=True)
+    st.dataframe(top_users)
 
     col_a, col_b = st.columns(2)
 
@@ -398,7 +398,7 @@ with tab3:
         fig.update_layout(coloraxis_showscale=False, margin=dict(l=0, t=0),
                           xaxis=dict(tickformat=","),
                           height=max(220, len(sess_practice) * 52))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     # Avg session duration by practice
     with col_b:
@@ -424,7 +424,7 @@ with tab3:
         )
         fig.update_layout(coloraxis_showscale=False, margin=dict(l=0, t=0),
                           height=max(220, len(avg_duration) * 52))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -454,7 +454,7 @@ with tab4:
     )
     fig.update_traces(hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:,}<extra></extra>")
     fig.update_layout(margin=dict(t=0), yaxis=dict(tickformat=","))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 
     col_a, col_b = st.columns(2)
 
@@ -497,7 +497,7 @@ with tab4:
                 fig.update_layout(coloraxis_showscale=False, margin=dict(l=0, t=0),
                                   xaxis=dict(tickprefix="$", tickformat=".4f"),
                                   height=max(220, len(cpt) * 52))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
     # Model usage by practice (new — existing token-by-practice chart doesn't break by model)
     with col_b:
@@ -526,7 +526,7 @@ with tab4:
                               xaxis=dict(tickformat=","),
                               height=max(220, n_practices * 52),
                               legend=dict(orientation="h", yanchor="bottom", y=1.02))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
     col_a, col_b = st.columns(2)
 
@@ -555,7 +555,7 @@ with tab4:
         )
         fig.update_traces(hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y:,}<extra></extra>")
         fig.update_layout(margin=dict(t=0, b=80), yaxis=dict(tickformat=","))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
 
     # Cache hit ratio by model
     with col_b:
@@ -599,4 +599,4 @@ with tab4:
                     showarrow=False, xanchor="left", font=dict(size=11),
                 )
         fig.update_layout(margin=dict(l=0, t=0, r=120))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
