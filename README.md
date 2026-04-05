@@ -116,7 +116,7 @@ All dashboard analytics are available as filtered REST endpoints with automatic 
 |               |                                       |
 | ------------- | ------------------------------------- |
 | Storage       | SQLite 3                              |
-| Processing    | Python 3.11+, pandas 3.0              |
+| Processing    | Python 3.11-3.13, pandas 3.0              |
 | Visualisation | Plotly 6, Streamlit 1.56              |
 | API           | FastAPI 0.115, Pydantic 2.11, uvicorn |
 
